@@ -1,0 +1,17 @@
+{
+  "name": "SuryaDesk — Solar After-Sales Service",
+  "short_name": "SuryaDesk",
+  "description": "Keep every solar service on track. Field service operations for solar installation companies.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F6F7F3",
+  "theme_color": "#176B52",
+  "icons": [
+    {
+      "src": "/suryadesk/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,551 @@
+// SuryaDesk — Multi-tenant solar after-sales service management
+// SQLite adaptation (string enums, JSON-encoded arrays via Text fields)
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────
+// Organizations & Identity
+// ─────────────────────────────────────────────────────────────
+
+model Organization {
+  id            String   @id @default(uuid())
+  name          String
+  slug          String   @unique
+  city          String?
+  phone         String?
+  email         String?
+  supportEmail  String?
+  address       String?
+  plan          String   @default("GROWTH") // STARTER | GROWTH | ENTERPRISE
+  isDemo        Boolean  @default(false)
+  archivedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  members         OrganizationMember[]
+  customers       Customer[]
+  installations   Installation[]
+  equipment       Equipment[]
+  warranties      Warranty[]
+  amcContracts    AmcContract[]
+  maintenance     MaintenancePlan[]
+  occurrences     MaintenanceOccurrence[]
+  requests        ServiceRequest[]
+  jobs            ServiceJob[]
+  jobAssignments  JobAssignment[]
+  checklistTemps  ChecklistTemplate[]
+  checklistResults JobChecklistResult[]
+  attachments     ServiceAttachment[]
+  reports         ServiceReport[]
+  statusEvents    JobStatusEvent[]
+  notifications   Notification[]
+  aiGenerations   AiGeneration[]
+  auditEvents     AuditEvent[]
+  syncOperations  SyncOperation[]
+  otpChallenges   ProofOtpChallenge[]
+}
+
+model User {
+  id               String    @id @default(uuid())
+  email            String    @unique
+  passwordHash     String
+  name             String
+  phone            String?
+  baseRole         String // OWNER | MANAGER | TECHNICIAN | CUSTOMER
+  emailVerified    Boolean   @default(false)
+  verificationTok  String?
+  resetToken       String?
+  resetTokenExpiry DateTime?
+  isActive         Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  memberships  OrganizationMember[]
+  sessions     Session[]
+  notifications Notification[]
+  auditEvents  AuditEvent[]
+  aiGenerations AiGeneration[]
+  assignments  JobAssignment[]   @relation("techAssignments")
+  assignedBy    JobAssignment[]  @relation("assigner")
+  customer      Customer?
+}
+
+model OrganizationMember {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  role           String // OWNER | MANAGER | TECHNICIAN
+  title          String? // e.g. "Senior Field Technician"
+  skills         String? // JSON array of strings
+  isActive       Boolean  @default(true)
+  joinedAt       DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId, role])
+}
+
+model Session {
+  id         String   @id // sha256 of the raw cookie token
+  userId     String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  userAgent  String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Customers & Installations
+// ─────────────────────────────────────────────────────────────
+
+model Customer {
+  id             String    @id @default(uuid())
+  organizationId String
+  userId         String?   @unique // portal login link
+  name           String
+  email          String
+  phone          String
+  city           String
+  address        String?
+  portalStatus   String    @default("NONE") // NONE | INVITED | ACTIVE
+  notes          String?
+  archivedAt     DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User?          @relation(fields: [userId], references: [id])
+  installations Installation[]
+  amcContracts AmcContract[]
+  requests     ServiceRequest[]
+  jobs         ServiceJob[]
+  reports      ServiceReport[]
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+}
+
+model Installation {
+  id             String    @id @default(uuid())
+  organizationId String
+  customerId     String
+  assetCode      String // e.g. ASSET-JAIP-0001
+  siteAddress    String
+  city           String
+  capacityKw     Float
+  installDate    DateTime
+  panelMake      String
+  panelModel     String
+  panelCount     Int
+  inverterMake   String
+  inverterModel  String
+  serialNumber   String
+  status         String    @default("ACTIVE") // ACTIVE | INACTIVE
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  equipment    Equipment[]
+  warranties   Warranty[]
+  amcContracts AmcContract[]
+  plans        MaintenancePlan[]
+  occurrences  MaintenanceOccurrence[]
+  requests     ServiceRequest[]
+  jobs         ServiceJob[]
+
+  @@unique([organizationId, assetCode])
+  @@index([organizationId, customerId])
+}
+
+model Equipment {
+  id             String   @id @default(uuid())
+  organizationId String
+  installationId String
+  kind           String // PANEL | INVERTER | METER | STRUCTURE
+  brand          String
+  model          String
+  serialNumber   String?
+  quantity       Int      @default(1)
+  installDate    DateTime?
+  notes          String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  installation Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, installationId])
+}
+
+model Warranty {
+  id             String   @id @default(uuid())
+  organizationId String
+  installationId String
+  kind           String // PANEL_PRODUCT | PANEL_PERFORMANCE | INVERTER | SERVICE
+  provider       String
+  coverage       String
+  startDate      DateTime
+  endDate        DateTime
+  status         String   @default("ACTIVE") // ACTIVE | EXPIRING_SOON | EXPIRED
+  documentName   String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  installation Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, installationId])
+}
+
+model AmcContract {
+  id               String    @id @default(uuid())
+  organizationId   String
+  customerId       String
+  installationId   String
+  contractCode     String // AMC-2024-0001
+  startDate        DateTime
+  endDate          DateTime
+  visitIntervalDays Int      @default(180)
+  coveredVisits    Int       @default(2)
+  visitsUsed       Int       @default(0)
+  includedServices String    @default("[]") // JSON array
+  excludedServices String    @default("[]") // JSON array
+  emergencyTat     String    @default("24 hours")
+  price            Float?
+  status           String    @default("ACTIVE") // ACTIVE | EXPIRING_SOON | EXPIRED | RENEWAL_PENDING | CANCELLED
+  documentName     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  organization Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  installation Installation   @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  plans        MaintenancePlan[]
+
+  @@unique([organizationId, contractCode])
+  @@index([organizationId, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Maintenance engine
+// ─────────────────────────────────────────────────────────────
+
+model MaintenancePlan {
+  id             String   @id @default(uuid())
+  organizationId String
+  installationId String
+  amcContractId  String?
+  name           String
+  intervalDays   Int      @default(180)
+  startDate      DateTime
+  active         Boolean  @default(true)
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  installation Installation            @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  amcContract  AmcContract?            @relation(fields: [amcContractId], references: [id])
+  occurrences  MaintenanceOccurrence[]
+
+  @@index([organizationId])
+}
+
+model MaintenanceOccurrence {
+  id              String    @id @default(uuid())
+  organizationId  String
+  planId          String
+  installationId  String
+  dueDate         DateTime
+  status          String    @default("UPCOMING") // UPCOMING | DUE | OVERDUE | COMPLETED | RESCHEDULED
+  completedAt     DateTime?
+  rescheduledFrom DateTime?
+  jobId           String?
+  notes           String?
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  plan         MaintenancePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  installation Installation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, planId, dueDate])
+  @@index([organizationId, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Service requests & jobs
+// ─────────────────────────────────────────────────────────────
+
+model ServiceRequest {
+  id             String    @id @default(uuid())
+  organizationId String
+  customerId     String
+  installationId String?
+  code           String // REQ-0001
+  category       String // MAINTENANCE | INVERTER | CLEANING | MONITORING | INSPECTION | OTHER
+  description    String
+  priority       String    @default("MEDIUM") // LOW | MEDIUM | HIGH | URGENT
+  status         String    @default("NEW") // NEW | UNDER_REVIEW | APPROVED | CONVERTED | REJECTED | CLOSED
+  source         String    @default("PORTAL") // PORTAL | PHONE | EMAIL
+  aiCategory     String?
+  aiPriority     String?
+  aiSummary      String?
+  reviewNotes    String?
+  reviewedById   String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  installation Installation? @relation(fields: [installationId], references: [id])
+  jobs         ServiceJob[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status])
+}
+
+model ServiceJob {
+  id                    String    @id @default(uuid())
+  organizationId        String
+  requestId             String?
+  maintenanceOccurrenceId String?  @unique
+  customerId            String
+  installationId        String
+  code                  String // JOB-0001
+  title                 String
+  description           String?
+  type                  String    @default("COMPLAINT") // COMPLAINT | MAINTENANCE
+  priority              String    @default("MEDIUM")
+  status                String    @default("SCHEDULED") // SCHEDULED | ASSIGNED | IN_PROGRESS | WORK_SUBMITTED | AWAITING_CUSTOMER | COMPLETED | NEEDS_REVIEW | CANCELLED
+  scheduledFor          DateTime
+  startedAt             DateTime?
+  submittedAt           DateTime?
+  completedAt           DateTime?
+  cancellationReason    String?
+  createdById           String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  organization Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  request      ServiceRequest?         @relation(fields: [requestId], references: [id])
+  customer     Customer                @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  installation Installation            @relation(fields: [installationId], references: [id])
+  assignments  JobAssignment[]
+  checklistResults JobChecklistResult[]
+  attachments  ServiceAttachment[]
+  otpChallenges ProofOtpChallenge[]
+  report       ServiceReport?
+  statusEvents JobStatusEvent[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, status])
+}
+
+model JobAssignment {
+  id                String   @id @default(uuid())
+  organizationId    String
+  jobId             String
+  technicianUserId  String
+  assignedByUserId  String
+  assignedAt        DateTime @default(now())
+  active            Boolean  @default(true)
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          ServiceJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  technician   User          @relation("techAssignments", fields: [technicianUserId], references: [id], onDelete: Cascade)
+  assigner     User          @relation("assigner", fields: [assignedByUserId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, technicianUserId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Checklists, proof of service, reports
+// ─────────────────────────────────────────────────────────────
+
+model ChecklistTemplate {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  kind           String // COMPLAINT | MAINTENANCE
+  items          String   @default("[]") // JSON: [{label, kind, required}]
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model JobChecklistResult {
+  id             String   @id @default(uuid())
+  organizationId String
+  jobId          String
+  itemLabel      String
+  itemKind       String   @default("BOOLEAN") // BOOLEAN | TEXT
+  value          String   @default("false") // "true"/"false" or free text
+  doneAt         DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          ServiceJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, jobId])
+}
+
+model ServiceAttachment {
+  id             String   @id @default(uuid())
+  organizationId String
+  jobId          String?
+  installationId String?
+  customerId     String?
+  kind           String   @default("PHOTO") // PHOTO | DOCUMENT | REPORT
+  fileName       String
+  mimeType       String
+  sizeBytes      Int      @default(0)
+  dataUrl        String // base64 data URL (private; served through authorized API)
+  caption        String?
+  uploadedById   String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          ServiceJob?  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, jobId])
+}
+
+model ProofOtpChallenge {
+  id             String    @id @default(uuid())
+  organizationId String
+  jobId          String
+  codeHash       String
+  expiresAt      DateTime
+  attemptsLeft   Int       @default(5)
+  consumedAt     DateTime?
+  lastSentAt     DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          ServiceJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, jobId])
+}
+
+model ServiceReport {
+  id                String    @id @default(uuid())
+  organizationId    String
+  jobId             String    @unique
+  customerId        String
+  technicianNotes   String
+  summary           String
+  followUpNeeded    Boolean   @default(false)
+  followUpNotes     String?
+  checklistJson     String    @default("[]")
+  photosJson        String    @default("[]") // [{id, caption}]
+  aiAssisted        Boolean   @default(false)
+  acknowledgedByOtp Boolean   @default(false)
+  acknowledgedAt    DateTime?
+  publishedAt       DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          ServiceJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, customerId])
+}
+
+model JobStatusEvent {
+  id             String   @id @default(uuid())
+  organizationId String
+  jobId          String
+  fromStatus     String?
+  toStatus       String
+  changedById    String?
+  note           String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  job          ServiceJob   @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, jobId])
+}
+
+// ─────────────────────────────────────────────────────────────
+// Notifications, AI, audit, sync
+// ─────────────────────────────────────────────────────────────
+
+model Notification {
+  id             String    @id @default(uuid())
+  organizationId String
+  userId         String
+  kind           String // NEW_REQUEST | JOB_ASSIGNED | JOB_STATUS | PENDING_REVIEW | AMC_REMINDER | REPORT_PUBLISHED | CUSTOMER_ACK | ACCOUNT
+  title          String
+  body           String?
+  entityType     String?
+  entityId       String?
+  channel        String    @default("IN_APP") // IN_APP | EMAIL_QUEUED
+  readAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+}
+
+model AiGeneration {
+  id             String   @id @default(uuid())
+  organizationId String
+  userId         String
+  task           String // CLASSIFY | REPORT_ASSIST | OPS_SUMMARY | CHAT
+  provider       String   @default("zai")
+  model          String
+  inputSummary   String
+  outputJson     String?
+  status         String   @default("OK") // OK | FAILED
+  approved       Boolean  @default(false)
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuditEvent {
+  id             String   @id @default(uuid())
+  organizationId String
+  actorUserId    String?
+  action         String
+  entityType     String
+  entityId       String?
+  detail         String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?       @relation(fields: [actorUserId], references: [id])
+
+  @@index([organizationId, createdAt])
+}
+
+model SyncOperation {
+  id              String    @id @default(uuid())
+  organizationId  String
+  jobId           String?
+  technicianUserId String
+  idempotencyKey  String    @unique
+  payload         String
+  status          String    @default("PENDING") // PENDING | APPLIED | REJECTED
+  result          String?
+  createdAt       DateTime  @default(now())
+  appliedAt       DateTime?
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+}
+
+model DemoResetLog {
+  id             String   @id @default(uuid())
+  organizationId String
+  resetByUserId  String?
+  note           String?
+  createdAt      DateTime @default(now())
+}
