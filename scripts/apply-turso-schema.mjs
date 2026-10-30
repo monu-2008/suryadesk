@@ -13,7 +13,7 @@ const sql = await readFile(sqlPath, "utf8");
 if (!sql.trim()) throw new Error("Generated schema SQL is empty.");
 
 // Extract the Prisma model table names from the generated SQLite SQL.
-const expectedTables = [...sql.matchAll(/CREATE TABLE\\s+(?:IF NOT EXISTS\\s+)?["'`]?([A-Za-z0-9_]+)["'`]?\\s*\\(/gi)]
+const expectedTables = [...sql.matchAll(/CREATE TABLE\s+(?:IF NOT EXISTS\s+)?["'\`]?([A-Za-z0-9_]+)["'\`]?\s*\(/gi)]
   .map((match) => match[1]);
 
 if (expectedTables.length === 0) {
@@ -36,12 +36,12 @@ try {
     const missing = expectedTables.filter((name) => !existing.has(name));
     if (missing.length > 0) {
       throw new Error(
-        `Turso already contains tables but the schema is incomplete. Missing: ${missing.join(", ")}. Refusing to modify existing data automatically.`
+        \`Turso already contains tables but the schema is incomplete. Missing: \${missing.join(", ")}. Refusing to modify existing data automatically.\`
       );
     }
 
     console.log(
-      `Existing Turso schema verified (${expectedTables.length} expected tables). Skipping schema creation; no existing data was changed.`
+      \`Existing Turso schema verified (\${expectedTables.length} expected tables). Skipping schema creation; no existing data was changed.\`
     );
   } else {
     console.log("Applying Prisma-generated SQLite schema to the empty Turso database...");
@@ -51,10 +51,10 @@ try {
   const finalTables = await readTables();
   const missingAfterApply = expectedTables.filter((name) => !finalTables.has(name));
   if (missingAfterApply.length > 0) {
-    throw new Error(`Schema verification failed. Missing tables: ${missingAfterApply.join(", ")}`);
+    throw new Error(\`Schema verification failed. Missing tables: \${missingAfterApply.join(", ")}\`);
   }
 
-  console.log(`Schema verified. Expected tables present: ${expectedTables.length}`);
+  console.log(\`Schema verified. Expected tables present: \${expectedTables.length}\`);
 } finally {
   client.close();
 }
