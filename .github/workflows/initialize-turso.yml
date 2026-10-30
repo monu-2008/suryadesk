@@ -48,7 +48,7 @@ jobs:
         env:
           DATABASE_URL: file:./db/custom.db
         run: |
-          bunx prisma migrate diff --from-empty --to-schema prisma/schema.prisma --script --output /tmp/suryadesk-schema.sql
+          bunx prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script --output /tmp/suryadesk-schema.sql
           test -s /tmp/suryadesk-schema.sql
 
       - name: Apply schema to the empty Turso database
