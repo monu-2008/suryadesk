@@ -13,6 +13,7 @@ permissions:
 
 jobs:
   initialize:
+    environment: TURSO_DATABASE_URL
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
